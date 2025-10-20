@@ -1,0 +1,23 @@
+# === Archivos y carpetas que deben incluirse ===
+!.gitignore
+!.gitattributes
+!.dockerignore
+!Dockerfile
+!pom.xml
+!mvnw
+!mvnw.cmd
+!/.mvn/wrapper/
+!/src/
+
+# === Archivos y carpetas que deben ignorarse ===
+target/
+logs/
+*.log
+*.log.*
+.idea/
+.vscode/
+build/
+.classpath
+.project
+.settings/
+.sts4-cache/

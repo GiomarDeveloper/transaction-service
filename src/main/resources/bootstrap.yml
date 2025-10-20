@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: transaction-service
+
+  config:
+    import: "optional:configserver:"
+
+  cloud:
+    config:
+      uri: ${CONFIG_SERVER_URI:http://localhost:8888}
+      fail-fast: false
+      retry:
+        initial-interval: 2000
+        max-attempts: 10

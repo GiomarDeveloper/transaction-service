@@ -1,0 +1,258 @@
+openapi: 3.0.3
+info:
+  title: Transaction Service API
+  version: 1.0.0
+  description: API para gestionar transacciones bancarias
+  contact:
+    name: Giomar Limo
+  license:
+    name: Apache 2.0
+servers:
+  - url: http://localhost:8084/bank/v1
+tags:
+  - name: transaction-api
+    description: Operations related to bank transactions
+
+paths:
+  /transactions:
+    get:
+      tags: [transaction-api]
+      summary: Get all transactions
+      operationId: getAll
+      parameters:
+        - name: customerId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: productType
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/ProductTypeEnum' }
+        - name: productId
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TransactionResponse' }
+
+  /transactions/deposit:
+    post:
+      tags: [transaction-api]
+      summary: Make a deposit
+      operationId: makeDeposit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DepositRequest' }
+      responses:
+        '201':
+          description: Deposit successful
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransactionResponse' }
+
+  /transactions/withdrawal:
+    post:
+      tags: [transaction-api]
+      summary: Make a withdrawal
+      operationId: makeWithdrawal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WithdrawalRequest' }
+      responses:
+        '201':
+          description: Withdrawal successful
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransactionResponse' }
+
+  /transactions/account/{accountId}:
+    get:
+      tags: [transaction-api]
+      summary: Get transactions by account
+      operationId: getByAccount
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TransactionResponse' }
+
+  /transactions/credit/{creditId}:
+    get:
+      tags: [transaction-api]
+      summary: Get transactions by credit
+      operationId: getByCredit
+      parameters:
+        - name: creditId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TransactionResponse' }
+
+  /transactions/customer/{customerId}:
+    get:
+      tags: [transaction-api]
+      summary: Get all customer transactions
+      operationId: getByCustomer
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TransactionResponse' }
+
+  /transactions/credit-payment:
+    post:
+      tags: [transaction-api]
+      summary: Make a credit payment
+      operationId: makeCreditPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentRequest' }
+      responses:
+        '201':
+          description: Credit payment successful
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransactionResponse' }
+
+  /transactions/credit-consumption:
+    post:
+      tags: [transaction-api]
+      summary: Make a credit consumption
+      operationId: makeCreditConsumption
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConsumptionRequest' }
+      responses:
+        '201':
+          description: Credit consumption successful
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransactionResponse' }
+
+components:
+  schemas:
+    TransactionRequest:
+      type: object
+      required: [amount, description]
+      properties:
+        amount:
+          type: number
+          format: double
+          minimum: 0
+        description:
+          type: string
+          maxLength: 255
+
+    DepositRequest:
+      allOf:
+        - $ref: '#/components/schemas/TransactionRequest'
+        - type: object
+          required: [accountId]
+          properties:
+            accountId: { type: string }
+
+    WithdrawalRequest:
+      allOf:
+        - $ref: '#/components/schemas/TransactionRequest'
+        - type: object
+          required: [accountId]
+          properties:
+            accountId: { type: string }
+
+    PaymentRequest:
+      allOf:
+        - $ref: '#/components/schemas/TransactionRequest'
+        - type: object
+          required: [creditId]
+          properties:
+            creditId: { type: string }
+            paymentDate:
+              type: string
+              format: date
+
+    ConsumptionRequest:
+      allOf:
+        - $ref: '#/components/schemas/TransactionRequest'
+        - type: object
+          required: [creditId]
+          properties:
+            creditId: { type: string }
+            merchant: { type: string }
+            transactionDate:
+              type: string
+              format: date-time
+
+    TransactionResponse:
+      type: object
+      properties:
+        id: { type: string }
+        transactionType: { $ref: '#/components/schemas/TransactionTypeEnum' }
+        productType: { $ref: '#/components/schemas/ProductTypeEnum' }
+        productId: { type: string }
+        customerId: { type: string }
+        amount:
+          type: number
+          format: double
+        description: { type: string }
+        previousBalance:
+          type: number
+          format: double
+        newBalance:
+          type: number
+          format: double
+        transactionDate:
+          type: string
+          format: date-time
+        status: { $ref: '#/components/schemas/TransactionStatusEnum' }
+
+    TransactionTypeEnum:
+      type: string
+      enum: [DEPOSITO, RETIRO, PAGO_CREDITO, CONSUMO_TARJETA]
+      example: DEPOSITO
+
+    ProductTypeEnum:
+      type: string
+      enum: [CUENTA, CREDITO]
+      example: CUENTA
+
+    TransactionStatusEnum:
+      type: string
+      enum: [COMPLETADO, RECHAZADO, PENDIENTE]
+      example: COMPLETADO
