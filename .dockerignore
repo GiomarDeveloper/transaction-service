@@ -1,0 +1,12 @@
+Dockerfile
+.dockerignore
+.git
+.gitignore
+README.md
+target/
+*.log
+.idea
+.vscode
+.classpath
+.project
+.settings
