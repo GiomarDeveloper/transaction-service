@@ -1,6 +1,8 @@
 package com.bank.transaction.infrastructure.controller;
 
 import com.bank.transaction.api.TransactionsApi;
+import com.bank.transaction.domain.exception.InsufficientFundsException;
+import com.bank.transaction.domain.exception.TransactionException;
 import com.bank.transaction.domain.ports.input.TransactionInputPort;
 import com.bank.transaction.mapper.TransactionApiMapper;
 import com.bank.transaction.model.*;
@@ -11,6 +13,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.time.LocalDate;
 
 @Slf4j
 @RestController
@@ -108,5 +112,64 @@ public class TransactionController implements TransactionsApi {
                     .map(transactionApiMapper::toResponse)
                     .map(response -> ResponseEntity.status(201).body(response));
         });
+    }
+
+    @Override
+    public Mono<ResponseEntity<Flux<TransactionResponse>>> makeTransfer(Mono<TransferRequest> transferRequest, ServerWebExchange exchange) {
+        return transferRequest.flatMap(request -> {
+                    log.info("POST /transactions/transfer - From: {}, To: {}, Amount: {}, Description: {}",
+                            request.getFromAccountId(),
+                            request.getToAccountId(),
+                            request.getAmount(),
+                            request.getDescription());
+
+                    Flux<TransactionResponse> transferResult = transactionInputPort.makeTransfer(request)
+                            .map(transactionApiMapper::toResponse);
+
+                    return Mono.just(ResponseEntity.status(201).body(transferResult));
+                })
+                .onErrorResume(TransactionException.class, ex -> {
+                    log.warn("Transfer validation failed: {}", ex.getMessage());
+                    return Mono.just(ResponseEntity.unprocessableEntity().build());
+                })
+                .onErrorResume(InsufficientFundsException.class, ex -> {
+                    log.warn("Insufficient funds for transfer: {}", ex.getMessage());
+                    return Mono.just(ResponseEntity.unprocessableEntity().build());
+                })
+                .onErrorResume(ex -> {
+                    log.error("Unexpected error in makeTransfer: {}", ex.getMessage());
+                    return Mono.just(ResponseEntity.status(500).build());
+                });
+    }
+
+    @Override
+    public Mono<ResponseEntity<Flux<TransactionResponse>>> getProductTransactionsForCurrentMonth(String productId, String productType, ServerWebExchange exchange) {
+        log.info("GET /transactions/product/{}/type/{}/current-month", productId, productType);
+
+        Flux<TransactionResponse> transactions = transactionInputPort
+                .getProductTransactionsForCurrentMonth(productId, productType)
+                .map(transactionApiMapper::toResponse);
+
+        return Mono.just(ResponseEntity.ok(transactions));
+    }
+
+    @Override
+    public Mono<ResponseEntity<Flux<CommissionReport>>> getCommissionsReport(LocalDate startDate, LocalDate endDate, String productType, ServerWebExchange exchange) {
+        log.info("GET /transactions/commissions-report?startDate={}&endDate={}&productType={}",
+                startDate, endDate, productType);
+
+        // Validaciones
+        if (startDate == null || endDate == null) {
+            return Mono.just(ResponseEntity.badRequest().build());
+        }
+
+        if (startDate.isAfter(endDate)) {
+            return Mono.just(ResponseEntity.badRequest().build());
+        }
+
+        Flux<CommissionReport> report = transactionInputPort
+                .getCommissionsReport(startDate, endDate, productType);
+
+        return Mono.just(ResponseEntity.ok(report));
     }
 }

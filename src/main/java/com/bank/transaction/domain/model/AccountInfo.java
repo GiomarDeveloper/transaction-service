@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class AccountInfo {
     private Boolean exists;
+    private String accountNumber;
     private String accountType;
     private String customerId;
     private Double balance;

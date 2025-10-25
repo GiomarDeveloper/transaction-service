@@ -1,8 +1,12 @@
 package com.bank.transaction.domain.ports.input;
 
 import com.bank.transaction.domain.model.Transaction;
+import com.bank.transaction.model.CommissionReport;
+import com.bank.transaction.model.TransferRequest;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.time.LocalDate;
 
 public interface TransactionInputPort {
     Mono<Transaction> makeDeposit(String accountId, Double amount, String description);
@@ -13,4 +17,7 @@ public interface TransactionInputPort {
     Flux<Transaction> getTransactionsByAccount(String accountId);
     Flux<Transaction> getTransactionsByCredit(String creditId);
     Flux<Transaction> getTransactionsByCustomer(String customerId);
+    Flux<Transaction> makeTransfer(TransferRequest transferRequest);
+    Flux<Transaction> getProductTransactionsForCurrentMonth(String productId, String productType);
+    Flux<CommissionReport> getCommissionsReport(LocalDate startDate, LocalDate endDate, String productType);
 }

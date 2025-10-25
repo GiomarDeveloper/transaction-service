@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
+
 @Component
 @RequiredArgsConstructor
 public class TransactionRepositoryAdapter implements TransactionRepositoryPort {
@@ -46,5 +48,27 @@ public class TransactionRepositoryAdapter implements TransactionRepositoryPort {
     @Override
     public Mono<Transaction> findById(String id) {
         return mongoRepository.findById(id).map(mapper::toDomain);
+    }
+
+    @Override
+    public Flux<Transaction> findByProductIdAndProductTypeAndCurrentMonth(String productId, String productType) {
+        return mongoRepository.findByProductIdAndProductTypeAndCurrentMonth(productId, productType)
+                .map(mapper::toDomain);
+    }
+
+    @Override
+    public Flux<Transaction> findByTransactionDateBetweenAndCommissionAppliedGreaterThan(
+            Instant startDate, Instant endDate, Double minCommission) {
+        return mongoRepository.findByTransactionDateBetweenAndCommissionAppliedGreaterThan(
+                        startDate, endDate, minCommission)
+                .map(mapper::toDomain);
+    }
+
+    @Override
+    public Flux<Transaction> findByTransactionDateBetweenAndProductTypeAndCommissionAppliedGreaterThan(
+            Instant startDate, Instant endDate, String productType, Double minCommission) {
+        return mongoRepository.findByTransactionDateBetweenAndProductTypeAndCommissionAppliedGreaterThan(
+                        startDate, endDate, productType, minCommission)
+                .map(mapper::toDomain);
     }
 }

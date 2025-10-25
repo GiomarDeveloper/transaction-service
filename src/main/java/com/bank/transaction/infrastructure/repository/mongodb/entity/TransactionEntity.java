@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Document(collection = "credits")
+@Document(collection = "transactions")
 public class TransactionEntity {
     @Id
     private String id;
@@ -39,4 +39,10 @@ public class TransactionEntity {
     private String status;
 
     private LocalDateTime createdAt;
+
+    private String transactionSubType;
+
+    private String relatedAccountId;
+
+    private Double commissionApplied;
 }

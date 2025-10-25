@@ -12,8 +12,10 @@ import lombok.NoArgsConstructor;
 public class CreditInfo {
     private Boolean exists;
     private String creditType;
+    private String creditNumber;
     private Double availableCredit;
     private Double creditLimit;
     private Double outstandingBalance;
     private String status;
+    private String customerId;
 }

@@ -25,6 +25,9 @@ public class Transaction {
     private Double newBalance;
     private LocalDateTime transactionDate;
     private TransactionStatusEnum status;
+    private String transactionSubType;
+    private String relatedAccountId;
+    private Double commissionApplied;
 
     public void validate() {
         if (amount == null || amount <= 0) {

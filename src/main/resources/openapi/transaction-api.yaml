@@ -166,6 +166,94 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/TransactionResponse' }
 
+  /transactions/transfer:
+    post:
+      tags: [transaction-api]
+      summary: Transfer funds between accounts
+      operationId: makeTransfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferRequest'
+      responses:
+        '201':
+          description: Transfer successful
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          description: Transfer failed due to business rules
+        '422':
+          description: Insufficient funds or account issues
+
+  /transactions/product/{productId}/type/{productType}/current-month:
+    get:
+      tags: [transaction-api]
+      summary: Get product transactions for current month by product type
+      operationId: getProductTransactionsForCurrentMonth
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: productType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [CUENTA, CREDITO]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TransactionResponse'
+
+  /transactions/commissions-report:
+    get:
+      tags: [transaction-api]
+      summary: Get commissions report by product and period
+      operationId: getCommissionsReport
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Start date (YYYY-MM-DD)
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: End date (YYYY-MM-DD)
+        - name: productType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [CUENTA, CREDITO]
+          description: Filter by product type
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommissionReport'
+
 components:
   schemas:
     TransactionRequest:
@@ -256,3 +344,87 @@ components:
       type: string
       enum: [COMPLETADO, RECHAZADO, PENDIENTE]
       example: COMPLETADO
+
+    TransferRequest:
+      type: object
+      required:
+        - fromAccountId
+        - toAccountId
+        - amount
+        - description
+      properties:
+        fromAccountId:
+          type: string
+          description: ID de la cuenta de origen
+        toAccountId:
+          type: string
+          description: ID de la cuenta de destino
+        amount:
+          type: number
+          format: double
+          minimum: 0.01
+          description: Monto a transferir
+        description:
+          type: string
+          maxLength: 255
+          description: Descripción de la transferencia
+        sameBank:
+          type: boolean
+          description: Indica si es transferencia dentro del mismo banco
+          default: true
+
+    CommissionReport:
+      type: object
+      properties:
+        productId:
+          type: string
+          description: Product ID
+        productType:
+          type: string
+          description: Product type (CUENTA/CREDITO)
+        productNumber:
+          type: string
+          description: Account or credit number
+        customerId:
+          type: string
+          description: Customer ID
+        totalCommissions:
+          type: number
+          format: double
+          description: Total commissions in period
+        transactionsCount:
+          type: integer
+          description: Number of transactions with commissions
+        period:
+          type: string
+          description: Period of the report
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommissionDetail'
+
+    CommissionDetail:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          description: Transaction ID
+        transactionDate:
+          type: string
+          format: date-time
+          description: Transaction date
+        transactionType:
+          type: string
+          description: Type of transaction
+        amount:
+          type: number
+          format: double
+          description: Transaction amount
+        commission:
+          type: number
+          format: double
+          description: Commission applied
+        description:
+          type: string
+          description: Transaction description
+

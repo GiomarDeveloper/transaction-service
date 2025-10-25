@@ -91,6 +91,7 @@ public class AccountServiceClient implements AccountServicePort {
                         .monthlyTransactionLimit(getIntegerValue(responseMap, "monthlyTransactionLimit"))
                         .currentMonthTransactions(getIntegerValue(responseMap, "currentMonthTransactions"))
                         .status(getStringValue(responseMap, "status"))
+                        .accountNumber(getStringValue(responseMap, "accountNumber"))
                         .build())
                 .onErrorResume(ex -> {
                     log.error("Error getting account info: {}", ex.getMessage());

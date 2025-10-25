@@ -150,6 +150,8 @@ public class CreditServiceClient implements CreditServicePort {
                             .creditLimit(getDoubleValue(responseMap, "creditLimit"))
                             .outstandingBalance(getDoubleValue(responseMap, "outstandingBalance"))
                             .status(getStringValue(responseMap, "status"))
+                            .creditNumber(getStringValue(responseMap, "creditNumber"))
+                            .customerId(getStringValue(responseMap, "customerId"))
                             .build();
                 })
                 .onErrorResume(ex -> {
