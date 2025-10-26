@@ -5,6 +5,8 @@ import lombok.Data;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -18,4 +20,12 @@ public class CreditInfo {
     private Double outstandingBalance;
     private String status;
     private String customerId;
+
+    private String mainAccountId;
+    private List<AssociatedAccountInfo> associatedAccounts;
+    private Double dailyWithdrawalLimit;
+    private Double dailyPurchaseLimit;
+    private String expirationDate;
+    private String cardBrand;
+    private String cardStatus;
 }

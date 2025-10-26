@@ -49,4 +49,12 @@ public interface TransactionMongoRepository extends ReactiveMongoRepository<Tran
             String productType,
             Double minCommission
     );
+    Flux<TransactionEntity> findByTransactionDateBetween(Instant startDate, Instant endDate);
+    Flux<TransactionEntity> findByCustomerIdAndTransactionDateBetween(String customerId, Instant startDate, Instant endDate);
+    Flux<TransactionEntity> findByProductTypeAndTransactionDateBetween(String productType, Instant startDate, Instant endDate);
+    Flux<TransactionEntity> findByProductIdAndTransactionDateBetween(String productId, Instant startDate, Instant endDate);
+    Flux<TransactionEntity> findByCustomerIdAndProductTypeAndTransactionDateBetween(
+            String customerId, String productType, Instant startDate, Instant endDate);
+    Flux<TransactionEntity> findByProductIdAndProductTypeOrderByTransactionDateDesc(
+            String productId, String productType);
 }

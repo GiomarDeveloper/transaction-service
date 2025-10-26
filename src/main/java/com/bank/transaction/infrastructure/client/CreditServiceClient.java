@@ -1,10 +1,12 @@
 package com.bank.transaction.infrastructure.client;
 
+import com.bank.transaction.domain.model.AssociatedAccountInfo;
 import com.bank.transaction.domain.model.CreditInfo;
 import com.bank.transaction.domain.ports.output.CreditServicePort;
 import com.bank.transaction.domain.exception.ExternalServiceException;
 import com.bank.transaction.model.ConsumptionRequest;
 import com.bank.transaction.model.PaymentRequest;
+import com.bank.transaction.model.ThirdPartyCreditPaymentRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,7 +19,9 @@ import reactor.core.publisher.Mono;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -143,7 +147,7 @@ public class CreditServiceClient implements CreditServicePort {
                 .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
                 .map(responseMap -> {
                     // Mapear manualmente desde el Map
-                    return CreditInfo.builder()
+                    CreditInfo.CreditInfoBuilder builder = CreditInfo.builder()
                             .exists(true)
                             .creditType(getStringValue(responseMap, "creditType"))
                             .availableCredit(getDoubleValue(responseMap, "availableCredit"))
@@ -151,8 +155,25 @@ public class CreditServiceClient implements CreditServicePort {
                             .outstandingBalance(getDoubleValue(responseMap, "outstandingBalance"))
                             .status(getStringValue(responseMap, "status"))
                             .creditNumber(getStringValue(responseMap, "creditNumber"))
-                            .customerId(getStringValue(responseMap, "customerId"))
-                            .build();
+                            .customerId(getStringValue(responseMap, "customerId"));
+
+                    String creditType = getStringValue(responseMap, "creditType");
+                    if ("TARJETA_DEBITO".equals(creditType)) {
+                        // Campos específicos para tarjetas de débito
+                        builder
+                                .mainAccountId(getStringValue(responseMap, "mainAccountId"))
+                                .dailyWithdrawalLimit(getDoubleValue(responseMap, "dailyWithdrawalLimit"))
+                                .dailyPurchaseLimit(getDoubleValue(responseMap, "dailyPurchaseLimit"))
+                                .expirationDate(getStringValue(responseMap, "expirationDate"))
+                                .cardBrand(getStringValue(responseMap, "cardBrand"))
+                                .cardStatus(getStringValue(responseMap, "cardStatus"))
+                                .associatedAccounts(mapAssociatedAccounts(responseMap));
+                    }
+
+                    CreditInfo creditInfo = builder.build();
+
+
+                    return builder.build();
                 })
                 .onErrorResume(ex -> {
                     log.error("Error getting credit info: {}", ex.getMessage());
@@ -160,6 +181,56 @@ public class CreditServiceClient implements CreditServicePort {
                             .exists(false)
                             .build());
                 });
+    }
+
+    private List<AssociatedAccountInfo> mapAssociatedAccounts(Map<String, Object> responseMap) {
+        Object associatedAccounts = responseMap.get("associatedAccounts");
+        if (associatedAccounts instanceof List<?>) {
+            List<Map<String, Object>> accountsList = (List<Map<String, Object>>) associatedAccounts;
+            return accountsList.stream()
+                    .map(accountMap -> AssociatedAccountInfo.builder()
+                            .accountId(getStringValue(accountMap, "accountId"))
+                            .sequenceOrder(getIntegerValue(accountMap, "sequenceOrder"))
+                            .associatedAt(getStringValue(accountMap, "associatedAt"))
+                            .status(getStringValue(accountMap, "status"))
+                            .build())
+                    .collect(Collectors.toList());
+        }
+        return null;
+    }
+
+    @Override
+    public Mono<Map<String, Object>> makeThirdPartyPayment(String creditId, ThirdPartyCreditPaymentRequest request) {
+        log.info("Making third party payment - credit: {}, payer: {}, amount: {}",
+                creditId, request.getPayerCustomerId(), request.getAmount());
+
+        return webClient.post()
+                .uri(creditServiceUrl + "/credits/{creditId}/third-party-payment", creditId)
+                .bodyValue(request)
+                .retrieve()
+                .onStatus(status -> status.isError(), response ->
+                        response.bodyToMono(String.class)
+                                .flatMap(errorBody -> Mono.error(new ExternalServiceException(
+                                        "Credit service error for third party payment: " + response.statusCode() + " - " + errorBody
+                                )))
+                )
+                .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
+                .doOnSuccess(response -> log.info("Third party payment successful for credit: {}", creditId))
+                .doOnError(error -> log.error("Error making third party payment: {}", error.getMessage()));
+    }
+
+    private Integer getIntegerValue(Map<String, Object> map, String key) {
+        Object value = map.get(key);
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        } else if (value instanceof String) {
+            try {
+                return Integer.parseInt((String) value);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private String getStringValue(Map<String, Object> map, String key) {

@@ -71,4 +71,40 @@ public class TransactionRepositoryAdapter implements TransactionRepositoryPort {
                         startDate, endDate, productType, minCommission)
                 .map(mapper::toDomain);
     }
+
+    @Override
+    public Flux<Transaction> findByTransactionDateBetween(Instant startDate, Instant endDate) {
+        return mongoRepository.findByTransactionDateBetween(startDate, endDate).map(mapper::toDomain);
+    }
+
+    @Override
+    public Flux<Transaction> findByCustomerIdAndTransactionDateBetween(String customerId, Instant startDate, Instant endDate) {
+        return mongoRepository.findByCustomerIdAndTransactionDateBetween(customerId, startDate, endDate).map(mapper::toDomain);
+    }
+
+    @Override
+    public Flux<Transaction> findByProductTypeAndTransactionDateBetween(String productType, Instant startDate, Instant endDate) {
+        return mongoRepository.findByProductTypeAndTransactionDateBetween(productType, startDate, endDate).map(mapper::toDomain);
+    }
+
+    @Override
+    public Flux<Transaction> findByProductIdAndTransactionDateBetween(String productId, Instant startDate, Instant endDate) {
+        return mongoRepository.findByProductIdAndTransactionDateBetween(productId, startDate, endDate).map(mapper::toDomain);
+    }
+
+    @Override
+    public Flux<Transaction> findByCustomerIdAndProductTypeAndTransactionDateBetween(
+            String customerId, String productType, Instant startDate, Instant endDate) {
+        return mongoRepository.findByCustomerIdAndProductTypeAndTransactionDateBetween(
+                customerId, productType, startDate, endDate).map(mapper::toDomain);
+    }
+
+    @Override
+    public Flux<Transaction> findTop10ByProductIdAndProductTypeOrderByTransactionDateDesc(
+            String productId, String productType) {
+
+        return mongoRepository.findByProductIdAndProductTypeOrderByTransactionDateDesc(productId, productType)
+                .take(10)  // Limitar a 10 resultados
+                .map(mapper::toDomain);
+    }
 }

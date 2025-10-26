@@ -25,4 +25,12 @@ public interface TransactionRepositoryPort {
             String productType,
             Double minCommission
     );
+    Flux<Transaction> findByTransactionDateBetween(Instant startDate, Instant endDate);
+    Flux<Transaction> findByCustomerIdAndTransactionDateBetween(String customerId, Instant startDate, Instant endDate);
+    Flux<Transaction> findByProductTypeAndTransactionDateBetween(String productType, Instant startDate, Instant endDate);
+    Flux<Transaction> findByProductIdAndTransactionDateBetween(String productId, Instant startDate, Instant endDate);
+    Flux<Transaction> findByCustomerIdAndProductTypeAndTransactionDateBetween(
+            String customerId, String productType, Instant startDate, Instant endDate);
+    Flux<Transaction> findTop10ByProductIdAndProductTypeOrderByTransactionDateDesc(
+            String productId, String productType);
 }

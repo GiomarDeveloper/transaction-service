@@ -1,6 +1,7 @@
 package com.bank.transaction.infrastructure.controller;
 
 import com.bank.transaction.api.TransactionsApi;
+import com.bank.transaction.domain.exception.ExternalServiceException;
 import com.bank.transaction.domain.exception.InsufficientFundsException;
 import com.bank.transaction.domain.exception.TransactionException;
 import com.bank.transaction.domain.ports.input.TransactionInputPort;
@@ -8,6 +9,7 @@ import com.bank.transaction.mapper.TransactionApiMapper;
 import com.bank.transaction.model.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
@@ -24,11 +26,20 @@ public class TransactionController implements TransactionsApi {
     private final TransactionInputPort transactionInputPort;
     private final TransactionApiMapper transactionApiMapper;
 
-    @Override
-    public Mono<ResponseEntity<Flux<TransactionResponse>>> getAll(String customerId, ProductTypeEnum productType, String productId, ServerWebExchange exchange) {
-        log.info("GET /transactions - customerId: {}, productType: {}, productId: {}", customerId, productType, productId);
 
-        Flux<TransactionResponse> transactions = transactionInputPort.getAllTransactions(customerId, (productType != null) ? productType.getValue() : null, productId)
+    @Override
+    public Mono<ResponseEntity<Flux<TransactionResponse>>> getAll(String customerId, ProductTypeEnum productType, String productId, LocalDate startDate, LocalDate endDate, ServerWebExchange exchange) {
+        log.info("GET /transactions - customerId: {}, productType: {}, productId: {}", customerId, productType, productId);
+        String startDateStr = (startDate != null) ? startDate.toString() : null;
+        String endDateStr = (endDate != null) ? endDate.toString() : null;
+
+        Flux<TransactionResponse> transactions = transactionInputPort.getAllTransactions(
+                        customerId,
+                        (productType != null) ? productType.getValue() : null,
+                        productId,
+                        startDateStr,
+                        endDateStr
+                )
                 .map(transactionApiMapper::toResponse);
 
         return Mono.just(ResponseEntity.ok(transactions));
@@ -171,5 +182,32 @@ public class TransactionController implements TransactionsApi {
                 .getCommissionsReport(startDate, endDate, productType);
 
         return Mono.just(ResponseEntity.ok(report));
+    }
+
+    @Override
+    public Mono<ResponseEntity<TransactionResponse>> makeThirdPartyCreditPayment(Mono<ThirdPartyCreditPaymentRequest> thirdPartyCreditPaymentRequest, ServerWebExchange exchange) {
+        return thirdPartyCreditPaymentRequest
+                .flatMap(transactionInputPort::makeThirdPartyCreditPayment)
+                .map(transaction -> ResponseEntity.status(HttpStatus.CREATED).body(transaction))
+                .onErrorResume(ExternalServiceException.class, ex -> {
+                    log.warn("External service error in third party payment: {}", ex.getMessage());
+                    return Mono.just(ResponseEntity.badRequest().build());
+                })
+                .onErrorResume(ex -> {
+                    log.error("Unexpected error in third party payment: {}", ex.getMessage());
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
+                });
+    }
+
+    @Override
+    public Mono<ResponseEntity<LastMovementsResponse>> getLast10Movements(String productId, ProductTypeEnum productType, ServerWebExchange exchange) {
+        return transactionInputPort.getLast10MovementsReport(productId, productType.getValue())
+                .map(response -> ResponseEntity.ok().body(response))
+                .onErrorResume(TransactionException.class, ex ->
+                        Mono.just(ResponseEntity.notFound().build()))
+                .onErrorResume(IllegalArgumentException.class, ex ->
+                        Mono.just(ResponseEntity.badRequest().build()))
+                .onErrorResume(ex ->
+                        Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build()));
     }
 }

@@ -1,8 +1,6 @@
 package com.bank.transaction.domain.service.impl;
 
-import com.bank.transaction.domain.model.AccountInfo;
-import com.bank.transaction.domain.model.ProductInfo;
-import com.bank.transaction.domain.model.Transaction;
+import com.bank.transaction.domain.model.*;
 import com.bank.transaction.domain.ports.input.TransactionInputPort;
 import com.bank.transaction.domain.ports.output.TransactionRepositoryPort;
 import com.bank.transaction.domain.ports.output.AccountServicePort;
@@ -16,6 +14,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.*;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -111,6 +111,10 @@ public class TransactionServiceImpl implements TransactionInputPort {
                         return Mono.error(new TransactionException("Credit is not active. Status: " + creditInfo.getStatus()));
                     }
 
+                    if ("TARJETA_DEBITO".equals(creditInfo.getCreditType())) {
+                        return processDebitCardPayment(creditInfo, amount, description);
+                    }
+
                     // Para PAGO: permitir tanto PRESTAMO_PERSONAL como TARJETA_CREDITO
                     // No necesitamos validar tipo específico para pagos
 
@@ -135,6 +139,10 @@ public class TransactionServiceImpl implements TransactionInputPort {
                         return Mono.error(new TransactionException("Credit is not active. Status: " + creditInfo.getStatus()));
                     }
 
+                    if("TARJETA_DEBITO".equals(creditInfo.getCreditType())){
+                        return processDebitCardDeposit(creditInfo, amount, description, merchant);
+                    }
+
                     // Validar tipo de crédito - SOLO tarjetas para consumo
                     if (!"TARJETA_CREDITO".equals(creditInfo.getCreditType())) {
                         return Mono.error(new TransactionException(
@@ -156,8 +164,28 @@ public class TransactionServiceImpl implements TransactionInputPort {
     }
 
     @Override
-    public Flux<Transaction> getAllTransactions(String customerId, String productType, String productId) {
-        log.info("Getting transactions - customer: {}, productType: {}, productId: {}", customerId, productType, productId);
+    public Flux<Transaction> getAllTransactions(String customerId, String productType, String productId, String startDate, String endDate) {
+        log.info("Getting transactions - customer: {}, productType: {}, productId: {}, startDate: {}, endDate: {}",
+                customerId, productType, productId, startDate, endDate);
+
+        // Si hay fechas, priorizar búsqueda por rango de fechas
+        if (startDate != null && endDate != null) {
+            Instant startInstant = LocalDate.parse(startDate).atStartOfDay(ZoneOffset.UTC).toInstant();
+            Instant endInstant = LocalDate.parse(endDate).plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+
+            if (customerId != null && productType != null) {
+                return transactionRepositoryPort.findByCustomerIdAndProductTypeAndTransactionDateBetween(
+                        customerId, productType, startInstant, endInstant);
+            } else if (customerId != null) {
+                return transactionRepositoryPort.findByCustomerIdAndTransactionDateBetween(customerId, startInstant, endInstant);
+            } else if (productType != null) {
+                return transactionRepositoryPort.findByProductTypeAndTransactionDateBetween(productType, startInstant, endInstant);
+            } else if (productId != null) {
+                return transactionRepositoryPort.findByProductIdAndTransactionDateBetween(productId, startInstant, endInstant);
+            } else {
+                return transactionRepositoryPort.findByTransactionDateBetween(startInstant, endInstant);
+            }
+        }
 
         if (customerId != null && productType != null) {
             return transactionRepositoryPort.findByCustomerIdAndProductType(customerId, productType);
@@ -221,7 +249,6 @@ public class TransactionServiceImpl implements TransactionInputPort {
                 });
     }
 
-
     @Override
     public Flux<CommissionReport> getCommissionsReport(LocalDate startDate, LocalDate endDate, String productType) {
         log.info("Generating commissions report from {} to {}, productType: {}", startDate, endDate, productType);
@@ -251,6 +278,274 @@ public class TransactionServiceImpl implements TransactionInputPort {
                     log.error("Error generating commissions report: {}", ex.getMessage());
                     return Flux.empty();
                 });
+    }
+
+    @Override
+    public Mono<TransactionResponse> makeThirdPartyCreditPayment(ThirdPartyCreditPaymentRequest request) {
+        log.info("Processing third party credit payment - credit: {}, payer: {}, amount: {}",
+                request.getCreditId(), request.getPayerCustomerId(), request.getAmount());
+
+        // Crear request para credit-service
+        ThirdPartyCreditPaymentRequest paymentRequest = new ThirdPartyCreditPaymentRequest();
+        paymentRequest.setAmount(request.getAmount());
+        paymentRequest.setPayerCustomerId(request.getPayerCustomerId());
+        paymentRequest.setPaymentDate(request.getPaymentDate() != null ? request.getPaymentDate() : LocalDate.now());
+        paymentRequest.setDescription(request.getDescription() != null ?
+                request.getDescription() : "Third party payment from customer: " + request.getPayerCustomerId());
+
+        // Procesar pago en credit-service y registrar transacción
+        return creditServicePort.makeThirdPartyPayment(request.getCreditId(), paymentRequest)
+                .flatMap(creditResponse -> {
+                    // Registrar la transacción localmente
+                    Transaction transaction = createThirdPartyPaymentTransaction(request, creditResponse);
+                    return transactionRepositoryPort.save(transaction);
+                })
+                .map(this::toTransactionResponse) // Convertir manualmente a TransactionResponse
+                .doOnSuccess(transaction -> log.info("Third party credit payment completed: {}", transaction.getId()))
+                .doOnError(error -> log.error("Error processing third party credit payment: {}", error.getMessage()));
+    }
+
+    @Override
+    public Mono<LastMovementsResponse> getLast10MovementsReport(String productId, String productType) {
+        log.info("Getting last 10 movements report for product: {}, type: {}", productId, productType);
+
+        // Validar que el productType sea válido
+        if (!"CUENTA".equals(productType) && !"CREDITO".equals(productType)) {
+            return Mono.error(new IllegalArgumentException("Invalid product type: " + productType));
+        }
+
+        return transactionRepositoryPort.findTop10ByProductIdAndProductTypeOrderByTransactionDateDesc(
+                        productId, productType)
+                .collectList()
+                .flatMap(transactions -> {
+                    if (transactions.isEmpty()) {
+                        return Mono.error(new TransactionException(
+                                "No movements found for product: " + productId + " of type: " + productType));
+                    }
+
+                    // Obtener información del producto para el reporte
+                    return getProductInfo(productId, productType)
+                            .map(productInfo -> {
+                                // Crear LastMovementsResponse usando setters (sin builder)
+                                LastMovementsResponse response = new LastMovementsResponse();
+                                response.setProductId(productId);
+                                response.setProductType(ProductTypeEnum.valueOf(productType));
+                                response.setProductNumber(productInfo.getNumber());
+                                response.setCustomerId(productInfo.getCustomerId());
+                                response.setTotalMovements(transactions.size());
+
+                                // Convertir transactions a MovementDetail
+                                List<MovementDetail> movementDetails = transactions.stream()
+                                        .map(this::toMovementDetail)
+                                        .collect(Collectors.toList());
+                                response.setMovements(movementDetails);
+
+                                return response;
+                            });
+                })
+                .doOnSuccess(report -> log.info("Last 10 movements report generated successfully for product: {}", productId))
+                .doOnError(error -> log.error("Error generating last 10 movements report: {}", error.getMessage()));
+    }
+
+    private MovementDetail toMovementDetail(Transaction transaction) {
+        // Crear MovementDetail usando setters (sin builder)
+        MovementDetail detail = new MovementDetail();
+        detail.setTransactionId(transaction.getId());
+        detail.setTransactionType(transaction.getTransactionType());
+        detail.setAmount(transaction.getAmount());
+        detail.setDescription(transaction.getDescription());
+        if (transaction.getTransactionDate() != null) {
+            ZoneOffset serverOffset = ZoneId.systemDefault().getRules().getOffset(transaction.getTransactionDate());
+            OffsetDateTime offsetDateTime = transaction.getTransactionDate().atOffset(serverOffset);
+            detail.setTransactionDate(offsetDateTime);
+        }
+        detail.setStatus(transaction.getStatus());
+        detail.setPreviousBalance(transaction.getPreviousBalance());
+        detail.setNewBalance(transaction.getNewBalance());
+
+        return detail;
+    }
+
+    private Mono<Transaction> processDebitCardPayment(CreditInfo creditInfo, Double amount, String description) {
+        log.info("Processing debit card payment - Card: {}, Amount: {}",
+                creditInfo.getCreditNumber(), amount);
+
+        if (!creditInfo.getExists()) {
+            return Mono.error(new TransactionException("Debit card is not exists. Card status: " + creditInfo.getCardStatus()));
+        }
+
+        return validateDebitCardLimits(creditInfo, amount)
+                .then(processPaymentInSequence(creditInfo, amount, description))
+                .flatMap(transactionResult -> {
+                    return transactionRepositoryPort.findById(transactionResult.getTransactionId())
+                            .doOnSuccess(tx -> log.info("Debit card payment completed - Transaction: {}, Card: {}, Account: {}",
+                                    tx.getId(), creditInfo.getCreditNumber(), transactionResult.getAccountId()));
+                });
+    }
+
+    private Mono<Void> validateDebitCardLimits(CreditInfo creditInfo, Double amount) {
+        if (creditInfo.getDailyPurchaseLimit() != null && amount > creditInfo.getDailyPurchaseLimit()) {
+            return Mono.error(new TransactionException(
+                    "Amount exceeds daily purchase limit. Limit: " + creditInfo.getDailyPurchaseLimit() +
+                            ", Attempted: " + amount
+            ));
+        }
+
+        return Mono.empty();
+    }
+
+    private Mono<TransactionResult> processPaymentInSequence(CreditInfo creditInfo, Double amount, String description) {
+        List<String> accountSequence = buildAccountSequence(creditInfo);
+
+        log.info("Processing payment in sequence for debit card {} - Accounts: {}",
+                creditInfo.getCreditNumber(), accountSequence.size());
+
+        return tryPaymentInAccounts(accountSequence, amount, 0, description, creditInfo.getCreditNumber())
+                .switchIfEmpty(Mono.error(new TransactionException(
+                        "Insufficient balance in all associated accounts for debit card: " + creditInfo.getCreditNumber()
+                )));
+    }
+
+    private List<String> buildAccountSequence(CreditInfo creditInfo) {
+        List<String> sequence = new ArrayList<>();
+
+        // 1. Cuenta principal
+        if (creditInfo.getMainAccountId() != null) {
+            sequence.add(creditInfo.getMainAccountId());
+        }
+
+        // 2. Cuentas asociadas ordenadas por sequenceOrder
+        if (creditInfo.getAssociatedAccounts() != null && !creditInfo.getAssociatedAccounts().isEmpty()) {
+            creditInfo.getAssociatedAccounts().stream()
+                    .sorted(Comparator.comparing(AssociatedAccountInfo::getSequenceOrder))
+                    .map(AssociatedAccountInfo::getAccountId)
+                    .forEach(sequence::add);
+        }
+
+        log.debug("Account sequence for debit card {}: {}", creditInfo.getCreditNumber(), sequence);
+        return sequence;
+    }
+
+    private Mono<TransactionResult> tryPaymentInAccounts(List<String> accountSequence, Double amount,
+                                                         int currentIndex, String description, String cardNumber) {
+        if (currentIndex >= accountSequence.size()) {
+            log.warn("No more accounts to try for debit card {}", cardNumber);
+            return Mono.empty();
+        }
+
+        String currentAccountId = accountSequence.get(currentIndex);
+
+        log.debug("Trying account {} ({} of {}) for debit card {}",
+                currentAccountId, currentIndex + 1, accountSequence.size(), cardNumber);
+
+        return accountServicePort.getAccountInfo(currentAccountId)
+                .flatMap(accountInfo -> {
+                    // Validaciones...
+                    if (!accountInfo.getExists() || !"ACTIVO".equals(accountInfo.getStatus())) {
+                        return tryPaymentInAccounts(accountSequence, amount, currentIndex + 1, description, cardNumber);
+                    }
+
+                    // Verificar saldo suficiente
+                    if (accountInfo.getBalance() >= amount) {
+                        log.info("Sufficient balance in account {} (${}), processing payment",
+                                currentAccountId, accountInfo.getBalance());
+
+                        // SOLO actualizar el balance sin crear transacción de RETIRO
+                        return accountServicePort.updateAccountBalance(currentAccountId, amount, "RETIRO")
+                                .flatMap(response -> {
+                                    // Crear directamente la transacción de PAGO_DEBITO
+                                    Transaction transaction = buildDebitCardPaymentTransaction(
+                                            response, amount, description, cardNumber, currentAccountId);
+                                    return transactionRepositoryPort.save(transaction)
+                                            .map(savedTx -> TransactionResult.builder()
+                                                    .success(true)
+                                                    .accountId(currentAccountId)
+                                                    .transactionId(savedTx.getId())
+                                                    .message("Payment processed successfully from account: " + currentAccountId)
+                                                    .build());
+                                });
+                    } else {
+                        return tryPaymentInAccounts(accountSequence, amount, currentIndex + 1, description, cardNumber);
+                    }
+                })
+                .onErrorResume(ex -> {
+                    log.error("Error processing account {}: {}, trying next account",
+                            currentAccountId, ex.getMessage());
+                    return tryPaymentInAccounts(accountSequence, amount, currentIndex + 1, description, cardNumber);
+                });
+    }
+
+    private Transaction buildDebitCardPaymentTransaction(Map<String, Object> response, Double amount,
+                                                         String description, String cardNumber, String accountId) {
+        return Transaction.builder()
+                .transactionType(TransactionTypeEnum.PAGO_DEBITO)
+                .productType(ProductTypeEnum.CUENTA)
+                .productId(accountId) // La cuenta de donde se debitó
+                .customerId(response.get("customerId").toString())
+                .amount(amount)
+                .description(description + " - Debit Card: " + cardNumber)
+                .previousBalance(Double.valueOf(response.get("previousBalance").toString()))
+                .newBalance(Double.valueOf(response.get("newBalance").toString()))
+                .transactionDate(LocalDateTime.now())
+                .status(TransactionStatusEnum.COMPLETADO)
+                .transactionSubType("PAGO_DEBITO")
+                .relatedAccountId(cardNumber) // La tarjeta de débito relacionada
+                .commissionApplied(0.0)
+                .build();
+    }
+
+    private TransactionResponse toTransactionResponse(Transaction transaction) {
+        TransactionResponse response = new TransactionResponse();
+        response.setId(transaction.getId());
+        response.setTransactionType(transaction.getTransactionType());
+        response.setProductType(transaction.getProductType());
+        response.setProductId(transaction.getProductId());
+        response.setCustomerId(transaction.getCustomerId());
+        response.setAmount(transaction.getAmount());
+        response.setDescription(transaction.getDescription());
+        response.setPreviousBalance(transaction.getPreviousBalance());
+        response.setNewBalance(transaction.getNewBalance());
+
+        // Convertir LocalDateTime a OffsetDateTime
+        if (transaction.getTransactionDate() != null) {
+            ZoneOffset serverOffset = ZoneId.systemDefault().getRules().getOffset(transaction.getTransactionDate());
+            response.setTransactionDate(transaction.getTransactionDate().atOffset(serverOffset));
+        }
+
+        response.setStatus(transaction.getStatus());
+
+        return response;
+    }
+
+    private Transaction createThirdPartyPaymentTransaction(ThirdPartyCreditPaymentRequest request,
+                                                           Map<String, Object> creditResponse) {
+        Transaction transaction = new Transaction();
+        transaction.setTransactionType(TransactionTypeEnum.PAGO_CREDITO);
+        transaction.setProductType(ProductTypeEnum.CREDITO);
+        transaction.setProductId(request.getCreditId());
+        transaction.setCustomerId(request.getPayerCustomerId());
+        transaction.setAmount(request.getAmount());
+        transaction.setDescription(request.getDescription() != null ?
+                request.getDescription() : "Third party payment for credit: " + request.getCreditId());
+        transaction.setTransactionDate(LocalDateTime.now());
+        transaction.setStatus(TransactionStatusEnum.COMPLETADO);
+        transaction.setCommissionApplied(0.0);
+
+        // Extraer información del crédito actualizado
+        if (creditResponse != null) {
+            Object outstandingBalance = creditResponse.get("outstandingBalance");
+            if (outstandingBalance != null) {
+                transaction.setNewBalance(Double.valueOf(outstandingBalance.toString()));
+            }
+
+            // También puedes establecer el previousBalance si está disponible
+            Object previousBalance = creditResponse.get("previousBalance");
+            if (previousBalance != null) {
+                transaction.setPreviousBalance(Double.valueOf(previousBalance.toString()));
+            }
+        }
+
+        return transaction;
     }
 
     private Mono<CommissionReport> generateProductCommissionReport(String productId,
@@ -327,6 +622,32 @@ public class TransactionServiceImpl implements TransactionInputPort {
         return detail;
     }
 
+    private Mono<Transaction> processDebitCardDeposit(CreditInfo creditInfo, Double amount, String description, String merchant) {
+        log.info("Processing debit card deposit - Card: {}, Amount: {}, Merchant: {}",
+                creditInfo.getCreditNumber(), amount, merchant);
+
+        if (!creditInfo.getExists()) {
+            return Mono.error(new TransactionException("Debit card does not exist"));
+        }
+
+        // Validar que tenga cuenta principal
+        if (creditInfo.getMainAccountId() == null) {
+            return Mono.error(new TransactionException("Debit card has no main account associated"));
+        }
+
+        String fullDescription = description + " - " + merchant + " - Debit Card: " + creditInfo.getCreditNumber();
+
+        return processAccountTransaction(
+                creditInfo.getMainAccountId(),
+                amount,
+                fullDescription,
+                "DEPOSITO",
+                "CONSUMO_DEBITO",
+                creditInfo.getCreditNumber()
+        )
+                .doOnSuccess(transaction -> log.info("Debit card deposit completed - Transaction: {}, Card: {}, Account: {}",
+                        transaction.getId(), creditInfo.getCreditNumber(), creditInfo.getMainAccountId()));
+    }
 
     private Mono<Void> validateRequest(String productId, Double amount, String description) {
         return Mono.fromRunnable(() -> {
