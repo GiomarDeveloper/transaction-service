@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE module PUBLIC
+        "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<module name="Checker">
+
+    <!-- Máximo de 100 caracteres por línea -->
+    <module name="LineLength">
+        <property name="max" value="100"/>
+        <property name="ignorePattern"
+                  value="^package.*|^import.*|a href|href|http://|https://|ftp://"/>
+    </module>
+
+    <!-- No permitir tabulaciones -->
+    <module name="FileTabCharacter">
+        <property name="eachLine" value="true"/>
+    </module>
+
+    <!-- Verifica nombres de archivo válidos -->
+    <module name="FileName">
+        <property name="format" value="^[A-Z][a-zA-Z0-9]*\.java$"/>
+    </module>
+
+    <!-- Módulo principal de análisis de código -->
+    <module name="TreeWalker">
+
+        <!-- Evita imports con * -->
+        <module name="AvoidStarImport"/>
+
+        <!-- Orden de imports -->
+        <module name="CustomImportOrder">
+            <property name="customImportOrderRules" value="STATIC###THIRD_PARTY_PACKAGE###SPECIAL_IMPORTS"/>
+            <property name="separateLineBetweenGroups" value="true"/>
+            <property name="sortImportsInGroupAlphabetically" value="true"/>
+        </module>
+
+        <!-- Elimina imports sin usar -->
+        <module name="UnusedImports"/>
+
+        <!-- Reglas de indentación -->
+        <module name="Indentation">
+            <property name="basicOffset" value="2"/>
+            <property name="braceAdjustment" value="2"/>
+            <property name="caseIndent" value="2"/>
+            <property name="throwsIndent" value="4"/>
+            <property name="lineWrappingIndentation" value="4"/>
+            <property name="arrayInitIndent" value="2"/>
+        </module>
+
+        <!-- Requiere llaves -->
+        <module name="NeedBraces"/>
+
+        <!-- Espaciados -->
+        <module name="WhitespaceAfter"/>
+        <module name="WhitespaceAround"/>
+
+        <!-- Documentación -->
+        <module name="JavadocType">
+            <property name="scope" value="public"/>
+        </module>
+
+        <module name="JavadocMethod">
+            <property name="scope" value="public"/>
+            <property name="allowMissingParamTags" value="true"/>
+            <property name="allowMissingReturnTag" value="true"/>
+        </module>
+
+        <!-- Convenciones de nombre -->
+        <module name="TypeName"/>
+        <module name="MethodName"/>
+        <module name="ParameterName"/>
+        <module name="LocalVariableName"/>
+        <module name="MemberName"/>
+
+        <!-- Separadores en blanco -->
+        <module name="EmptyLineSeparator">
+            <property name="allowNoEmptyLineBetweenFields" value="true"/>
+        </module>
+
+    </module>
+
+</module>
